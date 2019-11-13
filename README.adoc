@@ -1,0 +1,55 @@
+= xaos
+:project-version: 0.0.1
+
+____
+Chaotic collection of C++ components
+____
+
+
+== Install
+
+=== Using https://conan.io[Conan]
+
+Add the Conan remote that contains the package:
+[source,shell]
+----
+$ conan remote add grisumbras https://api.bintray.com/conan/grisumbras/conan
+----
+
+Then put into your `conanfile.txt`
+[source,ini,subs="attributes+"]
+----
+[requires]
+xaos/{project-version}@grisumbras/stable
+----
+
+Or into your `conanfile.py`
+[source,py,subs="attributes+"]
+----
+class YourConan(ConanFile):
+  requires = 'xaos/{project-version}@grisumbras/stable'
+----
+
+
+=== Install from sources
+
+----
+$ git clone https://github.com/grisumbras/xaos.git
+$ cd xaos
+$ b2 install --prefix=<installation prefix>
+----
+
+
+== Usage
+
+
+== Maintainer
+Dmitry Arkhipov <grisumbras@gmail.com>
+
+
+== Contributing
+Patches welcome!
+
+
+== License
+link:LICENSE[BSL-1.0] (C) 2019 Dmitry Arkhipov
