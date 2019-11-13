@@ -9,37 +9,33 @@ namespace xaos {
 namespace detail {
 
 
-template <class Signature, class RefKind> struct signature_overload_impl;
+template <class Signature, class RefKind>
+struct signature_overload_impl;
 
 template <class R, class... Args, class T>
 struct signature_overload_impl<R(Args...), T&>
-  : boost::mp11::mp_identity<R(Args...)&>
-{};
+  : boost::mp11::mp_identity<R(Args...)&> {};
 
 template <class R, class... Args, class T>
 struct signature_overload_impl<R(Args...), T const&>
-  : boost::mp11::mp_identity<R(Args...) const&>
-{};
+  : boost::mp11::mp_identity<R(Args...) const&> {};
 
 template <class R, class... Args, class T>
 struct signature_overload_impl<R(Args...), T&&>
-  : boost::mp11::mp_identity<R(Args...)&&>
-{};
+  : boost::mp11::mp_identity<R(Args...) &&> {};
 
 template <class R, class... Args, class T>
 struct signature_overload_impl<R(Args...), T const&&>
-  : boost::mp11::mp_identity<R(Args...) const&&>
-{};
+  : boost::mp11::mp_identity<R(Args...) const&&> {};
 
 template <class Signature, class RefKind>
-using signature_overload
-  = typename signature_overload_impl<Signature, RefKind>::type;
+using signature_overload =
+  typename signature_overload_impl<Signature, RefKind>::type;
 
 template <class Signature>
-using signature_overloads
-  = boost::mp11::mp_transform_q<
-      boost::mp11::mp_bind_front<signature_overload, Signature>,
-      boost::mp11::mp_list<int&, int const&, int&&, int const&&>>;
+using signature_overloads = boost::mp11::mp_transform_q<
+  boost::mp11::mp_bind_front<signature_overload, Signature>,
+  boost::mp11::mp_list<int&, int const&, int&&, int const&&>>;
 
 
 template <class Overload>
@@ -58,7 +54,7 @@ struct quoted_trait_for_overload<R(Args...) const&> {
 };
 
 template <class R, class... Args>
-struct quoted_trait_for_overload<R(Args...)&&> {
+struct quoted_trait_for_overload<R(Args...) &&> {
   template <class Traits>
   using fn = boost::mp11::mp_bool<Traits::rvalue_ref_call>;
 };
@@ -71,19 +67,16 @@ struct quoted_trait_for_overload<R(Args...) const&&> {
 
 
 template <class Traits, class Overload>
-using trait_for_overload
-  = boost::mp11::mp_eval_or_q<
-      boost::mp11::mp_false,
-      quoted_trait_for_overload<Overload>,
-      Traits>;
+using trait_for_overload = boost::mp11::mp_eval_or_q<
+  boost::mp11::mp_false,
+  quoted_trait_for_overload<Overload>,
+  Traits>;
 
 
 template <class Signature, class Traits>
-using enabled_signature_overloads
-  = boost::mp11::mp_filter_q<
-      boost::mp11::mp_bind_front<trait_for_overload, Traits>,
-      signature_overloads<Signature>>;
-
+using enabled_signature_overloads = boost::mp11::mp_filter_q<
+  boost::mp11::mp_bind_front<trait_for_overload, Traits>,
+  signature_overloads<Signature>>;
 
 
 struct function_backend_part_common {
@@ -102,40 +95,34 @@ struct function_backend_base_part<R(Args...)&> : function_backend_part_common {
 
 template <class R, class... Args>
 struct function_backend_base_part<R(Args...) const&>
-  : function_backend_part_common
-{
+  : function_backend_part_common {
   virtual auto call(Args... args) const& -> R = 0;
 };
 
 template <class R, class... Args>
-struct function_backend_base_part<R(Args...)&&>
-  : function_backend_part_common
-{
+struct function_backend_base_part<R(Args...) &&>
+  : function_backend_part_common {
   virtual auto call(Args... args) && -> R = 0;
 };
 
 template <class R, class... Args>
 struct function_backend_base_part<R(Args...) const&&>
-  : function_backend_part_common
-{
+  : function_backend_part_common {
   virtual auto call(Args... args) const&& -> R = 0;
 };
 
 
-template <class Signature, class Traits, class... Overloads >
-struct function_backend_base_helper : function_backend_base_part<Overloads>...
-{
+template <class Signature, class Traits, class... Overloads>
+struct function_backend_base_helper : function_backend_base_part<Overloads>... {
   virtual ~function_backend_base_helper() = default;
   using function_backend_base_part<Overloads>::call...;
 };
 
 
 template <class Signature, class Traits>
-using function_backend_base
-  = boost::mp11::mp_apply_q<
-      boost::mp11::mp_bind_front<
-        function_backend_base_helper, Signature, Traits>,
-      enabled_signature_overloads<Signature, Traits>>;
+using function_backend_base = boost::mp11::mp_apply_q<
+  boost::mp11::mp_bind_front<function_backend_base_helper, Signature, Traits>,
+  enabled_signature_overloads<Signature, Traits>>;
 
 
 template <class Derived, class Base, class Signature>
@@ -158,7 +145,7 @@ struct function_backend_part<Derived, Base, R(Args...) const&> : Base {
 };
 
 template <class Derived, class Base, class R, class... Args>
-struct function_backend_part<Derived, Base, R(Args...)&&> : Base {
+struct function_backend_part<Derived, Base, R(Args...) &&> : Base {
   auto call(Args... args) && -> R override {
     auto& self = static_cast<Derived&>(*this);
     using callable_t = typename Derived::callable_t;
@@ -183,8 +170,7 @@ struct function_backend
       function_backend_base<Signature, Traits>,
       boost::mp11::mp_bind_front<
         function_backend_part,
-        function_backend<Signature, Traits, Callable>>>
-{
+        function_backend<Signature, Traits, Callable>>> {
   using callable_t = Callable;
 
   function_backend(Callable callable) : callable(std::move(callable)) {}
@@ -196,8 +182,7 @@ struct function_backend
 
 template <class Signature, class Traits, class Callable>
 auto make_backend(Callable callable)
-  -> std::unique_ptr<function_backend_base<Signature, Traits>>
-{
+  -> std::unique_ptr<function_backend_base<Signature, Traits>> {
   using Backend = function_backend<Signature, Traits, Callable>;
   return std::make_unique<Backend>(std::move(callable));
 }
@@ -249,7 +234,7 @@ struct function_frontend_part<Derived, false, R(Args...) const&> {
 };
 
 template <class Derived, bool HasRvalueOverloads, class R, class... Args>
-struct function_frontend_part<Derived, HasRvalueOverloads, R(Args...)&&> {
+struct function_frontend_part<Derived, HasRvalueOverloads, R(Args...) &&> {
   auto operator()(Args... args) && -> R {
     auto& self = static_cast<Derived&>(*this);
     return forward_to_backend<typename Derived::backend_type&&>(
@@ -258,8 +243,7 @@ struct function_frontend_part<Derived, HasRvalueOverloads, R(Args...)&&> {
 };
 
 template <class Derived, bool HasRvalueOverloads, class R, class... Args>
-struct function_frontend_part<Derived, HasRvalueOverloads, R(Args...) const&&>
-{
+struct function_frontend_part<Derived, HasRvalueOverloads, R(Args...) const&&> {
   auto operator()(Args... args) const&& -> R {
     auto& self = static_cast<Derived const&>(*this);
     return forward_to_backend<typename Derived::backend_type const&&>(
@@ -269,10 +253,9 @@ struct function_frontend_part<Derived, HasRvalueOverloads, R(Args...) const&&>
 
 
 template <class Traits>
-using are_rvalue_overloads_enabled
-  = boost::mp11::mp_or<
-      trait_for_overload<Traits, void()&&>,
-      trait_for_overload<Traits, void() const&&>>;
+using are_rvalue_overloads_enabled = boost::mp11::mp_or<
+  trait_for_overload<Traits, void() &&>,
+  trait_for_overload<Traits, void() const&&>>;
 
 
 template <class Signature, class Traits, class... Overloads>
@@ -292,7 +275,8 @@ public:
   basic_function(Callable callable);
 
 private:
-  template <class, bool, class> friend struct detail::function_frontend_part;
+  template <class, bool, class>
+  friend struct detail::function_frontend_part;
 
   using backend_type = detail::function_backend_base<Signature, Traits>;
 
@@ -301,10 +285,9 @@ private:
 
 template <class Signature, class Traits, class... Overloads>
 template <class Callable>
-basic_function<Signature, Traits, Overloads...>
-::basic_function(Callable callable)
-  : backend_(detail::make_backend<Signature, Traits>(std::move(callable)))
-{}
+basic_function<Signature, Traits, Overloads...>::basic_function(
+  Callable callable)
+  : backend_(detail::make_backend<Signature, Traits>(std::move(callable))) {}
 
 
 } // namespace detail

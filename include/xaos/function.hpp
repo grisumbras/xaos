@@ -2,8 +2,9 @@
 #define XAOS_FUNCTION_HPP
 
 
-#include <memory>
 #include <xaos/detail/function.hpp>
+
+#include <memory>
 
 
 namespace xaos {
@@ -20,10 +21,9 @@ struct const_function_traits {
 
 
 template <class Signature, class Traits>
-using basic_function
-  = boost::mp11::mp_apply_q<
-      boost::mp11::mp_bind_front<detail::basic_function, Signature, Traits>,
-      detail::enabled_signature_overloads<Signature, Traits>>;
+using basic_function = boost::mp11::mp_apply_q<
+  boost::mp11::mp_bind_front<detail::basic_function, Signature, Traits>,
+  detail::enabled_signature_overloads<Signature, Traits>>;
 
 
 template <class Signature>

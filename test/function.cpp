@@ -28,10 +28,10 @@ struct enable_all {
 
 
 int main() {
-  BOOST_TEST_EQ(xaos::function<int()>([]{ return 12; })(), 12);
-  BOOST_TEST_EQ(xaos::function<int()>([]{ return 13; })(), 13);
-  BOOST_TEST_EQ(xaos::function<int(int)>([](auto n){ return n * n; })(5), 25);
-  BOOST_TEST_EQ(xaos::function<double()>([]{ return 0.5; })(), 0.5);
+  BOOST_TEST_EQ(xaos::function<int()>([] { return 12; })(), 12);
+  BOOST_TEST_EQ(xaos::function<int()>([] { return 13; })(), 13);
+  BOOST_TEST_EQ(xaos::function<int(int)>([](auto n) { return n * n; })(5), 25);
+  BOOST_TEST_EQ(xaos::function<double()>([] { return 0.5; })(), 0.5);
 
   {
     auto f = xaos::function<int()>([n = 5]() mutable { return n++; });
