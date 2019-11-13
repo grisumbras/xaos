@@ -1,0 +1,23 @@
+import path ;
+import print ;
+import testing ;
+
+
+project xaos-tests ;
+
+
+make include-function-hpp.cpp
+  : ../include/xaos/function.hpp
+  : @create-include-test
+  ;
+compile include-function-hpp.cpp /xaos//libs ;
+
+compile function-detail.cpp /xaos//libs ;
+run function.cpp /xaos//libs ;
+
+
+rule create-include-test ( target : header : properties * ) {
+  local path = [ path.relative $(header:G=) ../include ] ;
+  print.output $(target) ;
+  print.text "#include <$(path)>" "#include <$(path)>" : overwrite ;
+}

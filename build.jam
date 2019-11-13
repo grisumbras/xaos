@@ -1,0 +1,21 @@
+import package ;
+
+
+project xaos ;
+constant VERSION : 0.0.1 ;
+
+
+alias libs : /boost//libs : usage-requirements <include>include ;
+
+
+package.install install-headers xaos
+  : <install-source-root>include
+  :
+  :
+  : [ glob-tree-ex include : *.hpp ]
+  ;
+
+package.install-data install-files : xaos : LICENSE ;
+
+alias install : install-headers install-files ;
+explicit install ;
