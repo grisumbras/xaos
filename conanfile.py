@@ -6,7 +6,7 @@ from conans import (
 import re
 
 
-b2 = python_requires('b2-helper/0.5.0@grisumbras/stable')
+b2 = python_requires('b2-helper/0.6.0@grisumbras/stable')
 
 
 def get_version():

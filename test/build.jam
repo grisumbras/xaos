@@ -3,7 +3,9 @@ import print ;
 import testing ;
 
 
-project xaos-tests ;
+project xaos-tests
+  : default-build <cxxstd>17
+  ;
 
 
 make include-function-hpp.cpp
@@ -17,7 +19,8 @@ run function.cpp /xaos//libs ;
 
 
 rule create-include-test ( target : header : properties * ) {
-  local path = [ path.relative $(header:G=) ../include ] ;
+  local path = [ path.make $(header:G=) ] ;
+  path = [ path.relative $(path) ../include ] ;
   print.output $(target) ;
   print.text "#include <$(path)>" "#include <$(path)>" : overwrite ;
 }

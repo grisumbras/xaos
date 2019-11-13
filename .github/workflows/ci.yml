@@ -1,0 +1,88 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - '*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macOS-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Pull sources
+        uses: actions/checkout@v1
+
+      - name: Configure Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.7
+
+      - name: Install CPT
+        run: pip install conan_package_tools
+
+      - name: Run CPT
+        uses: grisumbras/run-cpt@v0.1.1
+        env:
+          CONAN_REMOTES: https://api.bintray.com/conan/grisumbras/conan
+          CONAN_STABLE_BRANCH_PATTERN: '---'
+
+      - name: Locate package folder
+        if: matrix.os == 'ubuntu-latest'
+        id: locate_package
+        uses: grisumbras/locate-conan-package@v0.2.0
+
+      - name: Upload package artifacts
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v1
+        with:
+          name: artifacts
+          path: ${{ steps.locate_package.outputs.path }}
+
+  publish:
+    runs-on: ubuntu-latest
+
+    needs: build
+
+    if: github.event.ref == 'refs/heads/master' || startsWith(github.event.ref, 'refs/tags/')
+
+    steps:
+      - name: Pull sources
+        uses: actions/checkout@v1
+
+      - name: Configure Python
+        uses: actions/setup-python@v1
+        with:
+          python-version: 3.7
+
+      - name: Install Conan
+        run: |
+          pip install conan
+          conan remote add upload https://api.bintray.com/conan/grisumbras/conan
+
+      - name: Download package artifacts
+        uses: actions/download-artifact@v1
+        with:
+          name: artifacts
+
+      - name: Export packages
+        uses: grisumbras/conan-export-subdirs@v0.3.0
+        with:
+          path: artifacts
+
+      - name: Promote to stable
+        if: startsWith(github.event.ref, 'refs/tags/')
+        uses: grisumbras/conan-promote@v0.2.0
+
+      - name: Upload packages
+        uses: grisumbras/conan-upload@latest
+        with:
+          password: ${{ secrets.CONAN_PASSWORD }}
+          url: https://api.bintray.com/conan/grisumbras/conan
+          channel: '*'

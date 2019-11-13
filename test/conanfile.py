@@ -4,7 +4,7 @@ from conans import (
 )
 
 
-b2 = python_requires('b2-helper/0.5.0@grisumbras/stable')
+b2 = python_requires('b2-helper/0.6.0@grisumbras/stable')
 
 
 @b2.build_with_b2
