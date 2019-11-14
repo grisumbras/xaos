@@ -85,6 +85,14 @@ using enabled_signature_overloads = boost::mp11::mp_filter_q<
   signature_overloads<Signature>>;
 
 
+template <class Traits>
+using copyability_enabled_helper = boost::mp11::mp_bool<Traits::is_copyable>;
+
+template <class Traits>
+using is_copyability_enabled = boost::mp11::
+  mp_eval_or<boost::mp11::mp_false, copyability_enabled_helper, Traits>;
+
+
 struct function_backend_part_common {
 protected:
   ~function_backend_part_common() = default;
@@ -126,10 +134,26 @@ struct function_backend_base_helper
 };
 
 
+template <class Result>
+struct clone_base {
+  virtual auto clone() const -> std::unique_ptr<Result> = 0;
+};
+
+template <class Result, class Traits>
+using clone_support_base = boost::mp11::mp_eval_if_c<
+  !is_copyability_enabled<Traits>::value,
+  boost::mp11::mp_identity<void>,
+  clone_base,
+  Result>;
+
+
 template <class Signature, class Traits>
-using function_backend_base = boost::mp11::mp_apply_q<
-  boost::mp11::mp_bind_front<function_backend_base_helper, Signature, Traits>,
-  enabled_signature_overloads<Signature, Traits>>;
+struct function_backend_base
+  : boost::mp11::mp_apply_q<
+      boost::mp11::
+        mp_bind_front<function_backend_base_helper, Signature, Traits>,
+      enabled_signature_overloads<Signature, Traits>>
+  , clone_support_base<function_backend_base<Signature, Traits>, Traits> {};
 
 
 template <class R, class T, class... Args>
@@ -173,11 +197,32 @@ struct function_backend_part<Derived, Base, R(Args...) const&&> : Base {
 };
 
 
+template <class Derived, class Base>
+struct function_clone_impl : Base {
+  auto clone() const -> std::unique_ptr<Base> override {
+    auto& self = static_cast<Derived const&>(*this);
+    return std::make_unique<Derived>(self.callable);
+  }
+};
+
+
+template <class Traits, class Derived, class Base>
+using clone_support = boost::mp11::mp_eval_if_c<
+  !is_copyability_enabled<Traits>::value,
+  Base,
+  function_clone_impl,
+  Derived,
+  Base>;
+
+
 template <class Signature, class Traits, class Callable>
 struct function_backend
   : boost::mp11::mp_fold_q<
       enabled_signature_overloads<Signature, Traits>,
-      function_backend_base<Signature, Traits>,
+      clone_support<
+        Traits,
+        function_backend<Signature, Traits, Callable>,
+        function_backend_base<Signature, Traits>>,
       boost::mp11::mp_bind_front<
         function_backend_part,
         function_backend<Signature, Traits, Callable>>> {
@@ -271,36 +316,70 @@ using are_rvalue_overloads_enabled = boost::mp11::mp_or<
   trait_for_overload<Traits, void() const&&>>;
 
 
+template <class Signature, class Traits>
+struct noncopyable_backend_holder {
+  using backend_type = detail::function_backend_base<Signature, Traits>;
+
+  noncopyable_backend_holder() noexcept {}
+
+  template <class Callable>
+  noncopyable_backend_holder(Callable callable)
+    : backend_(detail::make_backend<Signature, Traits>(std::move(callable))) {}
+
+  std::unique_ptr<backend_type> backend_;
+};
+
+
+template <class Signature, class Traits>
+struct copyable_backend_holder
+  : noncopyable_backend_holder<Signature, Traits> {
+  using copyable_backend_holder::noncopyable_backend_holder::
+    noncopyable_backend_holder;
+
+  copyable_backend_holder(copyable_backend_holder&&) noexcept = default;
+  auto operator=(copyable_backend_holder&&) noexcept
+    -> copyable_backend_holder& = default;
+
+  copyable_backend_holder(copyable_backend_holder const& other) {
+    this->backend_ = other.backend_->clone();
+  }
+
+  auto operator=(copyable_backend_holder const& other)
+    -> copyable_backend_holder& {
+    auto temp = other;
+    return (*this) = std::move(temp);
+  }
+};
+
+
+template <class Signature, class Traits>
+using copyability_support = boost::mp11::mp_eval_if_c<
+  !is_copyability_enabled<Traits>::value,
+  noncopyable_backend_holder<Signature, Traits>,
+  copyable_backend_holder,
+  Signature,
+  Traits>;
+
 template <class Signature, class Traits, class... Overloads>
 class basic_function
   : public function_frontend_part<
       basic_function<Signature, Traits, Overloads...>,
       are_rvalue_overloads_enabled<Traits>::value,
       Overloads>...
+  , copyability_support<Signature, Traits>
 {
 public:
+  using copyability_support<Signature, Traits>::copyability_support;
+
   using function_frontend_part<
     basic_function<Signature, Traits, Overloads...>,
     are_rvalue_overloads_enabled<Traits>::value,
     Overloads>::operator()...;
 
-  template <class Callable>
-  basic_function(Callable callable);
-
 private:
   template <class, bool, class>
   friend struct detail::function_frontend_part;
-
-  using backend_type = detail::function_backend_base<Signature, Traits>;
-
-  std::unique_ptr<backend_type> backend_;
 };
-
-template <class Signature, class Traits, class... Overloads>
-template <class Callable>
-basic_function<Signature, Traits, Overloads...>::basic_function(
-  Callable callable)
-  : backend_(detail::make_backend<Signature, Traits>(std::move(callable))) {}
 
 
 } // namespace detail

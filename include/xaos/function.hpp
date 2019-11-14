@@ -11,10 +11,12 @@ namespace xaos {
 
 
 struct function_traits {
+  static constexpr bool is_copyable = true;
   static constexpr bool lvalue_ref_call = true;
 };
 
 struct const_function_traits {
+  static constexpr bool is_copyable = true;
   static constexpr bool const_lvalue_ref_call = true;
 };
 

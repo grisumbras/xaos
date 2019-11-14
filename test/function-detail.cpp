@@ -70,3 +70,26 @@ static_assert(std::is_base_of_v<
                 true,
                 int() &&>,
               xaos::basic_function<int(), enable_all>>);
+
+static_assert(
+  xaos::detail::is_copyability_enabled<xaos::function_traits>::value);
+static_assert(
+  xaos::detail::is_copyability_enabled<xaos::const_function_traits>::value);
+static_assert(
+  !xaos::detail::is_copyability_enabled<xaos::rvalue_function_traits>::value);
+
+static_assert(
+  std::is_base_of_v<
+    xaos::detail::noncopyable_backend_holder<int(), xaos::function_traits>,
+    xaos::function<int()>>);
+static_assert(
+  std::is_base_of_v<
+    xaos::detail::copyable_backend_holder<int(), xaos::function_traits>,
+    xaos::function<int()>>);
+
+static_assert(std::is_copy_constructible_v<xaos::function<int()>>);
+static_assert(std::is_copy_assignable_v<xaos::function<int()>>);
+static_assert(std::is_copy_constructible_v<xaos::const_function<int()>>);
+static_assert(std::is_copy_assignable_v<xaos::const_function<int()>>);
+static_assert(!std::is_copy_constructible_v<xaos::rfunction<int()>>);
+static_assert(!std::is_copy_assignable_v<xaos::rfunction<int()>>);
