@@ -4,7 +4,10 @@ import testing ;
 
 
 project xaos-tests
-  : default-build <cxxstd>17
+  : default-build
+    <cxxstd>17
+    <warnings>pedantic
+    <warnings-as-errors>on
   ;
 
 

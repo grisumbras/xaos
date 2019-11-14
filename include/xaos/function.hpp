@@ -25,20 +25,28 @@ struct rvalue_function_traits {
 };
 
 
-template <class Signature, class Traits>
+template <
+  class Signature,
+  class Traits,
+  class Allocator = std::allocator<void>>
 using basic_function = boost::mp11::mp_apply_q<
-  boost::mp11::mp_bind_front<detail::basic_function, Signature, Traits>,
+  boost::mp11::mp_bind_front<
+    detail::basic_function,
+    Signature,
+    Traits,
+    typename std::allocator_traits<Allocator>::template rebind_alloc<void>>,
   detail::enabled_signature_overloads<Signature, Traits>>;
 
 
-template <class Signature>
-using function = basic_function<Signature, function_traits>;
+template <class Signature, class Allocator = std::allocator<void>>
+using function = basic_function<Signature, function_traits, Allocator>;
 
-template <class Signature>
-using const_function = basic_function<Signature, const_function_traits>;
+template <class Signature, class Allocator = std::allocator<void>>
+using const_function
+  = basic_function<Signature, const_function_traits, Allocator>;
 
-template <class Signature>
-using rfunction = basic_function<Signature, rvalue_function_traits>;
+template <class Signature, class Allocator = std::allocator<void>>
+using rfunction = basic_function<Signature, rvalue_function_traits, Allocator>;
 
 
 } // namespace xaos

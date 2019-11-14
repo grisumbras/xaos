@@ -2,6 +2,8 @@
 #define XAOS_DETAIL_FUNCTION_HPP
 
 
+#include <boost/core/empty_value.hpp>
+#include <boost/core/pointer_traits.hpp>
 #include <boost/mp11/algorithm.hpp>
 #include <boost/mp11/bind.hpp>
 #include <boost/mp11/utility.hpp>
@@ -9,6 +11,7 @@
 
 #include <functional>
 #include <memory>
+#include <type_traits>
 
 
 namespace xaos {
@@ -129,22 +132,25 @@ struct function_backend_base_part<R(Args...) const&&>
 template <class Signature, class Traits, class... Overloads>
 struct function_backend_base_helper
   : function_backend_base_part<Overloads>... {
-  virtual ~function_backend_base_helper() = default;
   using function_backend_base_part<Overloads>::call...;
+
+protected:
+  ~function_backend_base_helper() = default;
 };
 
 
-template <class Result>
 struct clone_base {
-  virtual auto clone() const -> std::unique_ptr<Result> = 0;
+  virtual auto clone(void* alloc) const -> void* = 0;
+
+protected:
+  ~clone_base() = default;
 };
 
 template <class Result, class Traits>
-using clone_support_base = boost::mp11::mp_eval_if_c<
-  !is_copyability_enabled<Traits>::value,
-  boost::mp11::mp_identity<void>,
+using clone_support_base = std::conditional_t<
+  is_copyability_enabled<Traits>::value,
   clone_base,
-  Result>;
+  boost::mp11::mp_identity<void>>;
 
 
 template <class Signature, class Traits>
@@ -153,14 +159,19 @@ struct function_backend_base
       boost::mp11::
         mp_bind_front<function_backend_base_helper, Signature, Traits>,
       enabled_signature_overloads<Signature, Traits>>
-  , clone_support_base<function_backend_base<Signature, Traits>, Traits> {};
+  , clone_support_base<function_backend_base<Signature, Traits>, Traits> {
+  virtual void delete_this(void* alloc) = 0;
+
+protected:
+  ~function_backend_base() = default;
+};
 
 
 template <class R, class T, class... Args>
 auto forward_to_callable(T&& t, Args... args) -> R {
   using callable_t = typename std::remove_reference_t<T>::callable_t;
   using callable_ref = boost::copy_cv_ref_t<callable_t, T&&>;
-  return std::invoke(static_cast<callable_ref>(t.callable), args...);
+  return std::invoke(static_cast<callable_ref>(t.callable()), args...);
 }
 
 
@@ -169,6 +180,8 @@ struct function_backend_part;
 
 template <class Derived, class Base, class R, class... Args>
 struct function_backend_part<Derived, Base, R(Args...)&> : Base {
+  using Base::call;
+
   auto call(Args... args) & -> R override {
     return forward_to_callable<R>(static_cast<Derived&>(*this), args...);
   }
@@ -176,6 +189,8 @@ struct function_backend_part<Derived, Base, R(Args...)&> : Base {
 
 template <class Derived, class Base, class R, class... Args>
 struct function_backend_part<Derived, Base, R(Args...) const&> : Base {
+  using Base::call;
+
   auto call(Args... args) const& -> R override {
     return forward_to_callable<R>(static_cast<Derived const&>(*this), args...);
   }
@@ -183,6 +198,8 @@ struct function_backend_part<Derived, Base, R(Args...) const&> : Base {
 
 template <class Derived, class Base, class R, class... Args>
 struct function_backend_part<Derived, Base, R(Args...) &&> : Base {
+  using Base::call;
+
   auto call(Args... args) && -> R override {
     return forward_to_callable<R>(static_cast<Derived&&>(*this), args...);
   }
@@ -190,6 +207,8 @@ struct function_backend_part<Derived, Base, R(Args...) &&> : Base {
 
 template <class Derived, class Base, class R, class... Args>
 struct function_backend_part<Derived, Base, R(Args...) const&&> : Base {
+  using Base::call;
+
   auto call(Args... args) const&& -> R override {
     return forward_to_callable<R>(
       static_cast<Derived const&&>(*this), args...);
@@ -197,49 +216,176 @@ struct function_backend_part<Derived, Base, R(Args...) const&&> : Base {
 };
 
 
-template <class Derived, class Base>
+template <class Derived, class Base, class Allocator>
 struct function_clone_impl : Base {
-  auto clone() const -> std::unique_ptr<Base> override {
-    auto& self = static_cast<Derived const&>(*this);
-    return std::make_unique<Derived>(self.callable);
+  auto clone(void* type_erased_alloc) const -> void* override {
+    using proto_traits = std::allocator_traits<Allocator>;
+    static_assert(std::is_void<typename proto_traits::value_type>::value);
+
+    auto& proto_alloc = *reinterpret_cast<Allocator*>(type_erased_alloc);
+    using alloc_traits =
+      typename proto_traits::template rebind_traits<Derived>;
+    auto alloc = typename alloc_traits::allocator_type(proto_alloc);
+
+    auto fancy_ptr = alloc_traits::allocate(alloc, 1);
+    auto const raw_ptr = boost::to_address(fancy_ptr);
+    try {
+      auto& self = static_cast<Derived const&>(*this);
+      alloc_traits::construct(
+        alloc, raw_ptr, self.callable(), std::move(fancy_ptr));
+    } catch (...) { alloc_traits::deallocate(alloc, fancy_ptr, 1); }
+    return static_cast<typename Derived::base_t*>(raw_ptr);
   }
 };
 
 
-template <class Traits, class Derived, class Base>
+template <class Traits, class Allocator, class Derived, class Base>
 using clone_support = boost::mp11::mp_eval_if_c<
   !is_copyability_enabled<Traits>::value,
   Base,
   function_clone_impl,
   Derived,
-  Base>;
+  Base,
+  Allocator>;
 
 
-template <class Signature, class Traits, class Callable>
-struct function_backend
+template <class Traits>
+using pointer_to_result = decltype(
+  Traits::pointer::pointer_to(std::declval<typename Traits::element_type&>()));
+
+template <class Pointer>
+using has_pointer_to = boost::mp11::mp_or<
+  boost::mp11::mp_valid<pointer_to_result, std::pointer_traits<Pointer>>,
+  std::is_pointer<Pointer>>;
+
+
+template <class Pointer, class = void>
+struct pointer_holder_impl : boost::empty_value<Pointer, 1> {
+  using pointer = Pointer;
+  using traits = typename std::pointer_traits<Pointer>;
+  pointer_holder_impl(pointer ptr)
+    : boost::empty_value<Pointer, 1>(boost::empty_init_t(), std::move(ptr)) {}
+
+  auto pointer_to(typename traits::element_type&) -> Pointer {
+    return boost::empty_value<Pointer, 1>::get();
+  }
+};
+
+template <class Pointer>
+struct pointer_holder_impl<
+  Pointer,
+  std::enable_if_t<has_pointer_to<Pointer>::value>> {
+  using pointer = Pointer;
+  using traits = typename std::pointer_traits<Pointer>;
+
+  pointer_holder_impl(pointer) noexcept {}
+
+  auto pointer_to(typename traits::element_type& obj) -> Pointer {
+    return traits::pointer_to(obj);
+  }
+};
+
+template <class T, class Allocator>
+using pointer_holder = pointer_holder_impl<typename std::allocator_traits<
+  Allocator>::template rebind_alloc<T>::pointer>;
+
+
+template <class Signature, class Traits, class Allocator, class Callable>
+struct function_backend final
   : boost::mp11::mp_fold_q<
       enabled_signature_overloads<Signature, Traits>,
       clone_support<
         Traits,
-        function_backend<Signature, Traits, Callable>,
+        Allocator,
+        function_backend<Signature, Traits, Allocator, Callable>,
         function_backend_base<Signature, Traits>>,
       boost::mp11::mp_bind_front<
         function_backend_part,
-        function_backend<Signature, Traits, Callable>>> {
+        function_backend<Signature, Traits, Allocator, Callable>>>
+  , boost::empty_value<Callable, 0>
+  , pointer_holder<
+      function_backend<Signature, Traits, Allocator, Callable>,
+      Allocator> {
   using callable_t = Callable;
+  using base_t = function_backend_base<Signature, Traits>;
+  using pointer_holder_t = pointer_holder<
+    function_backend<Signature, Traits, Allocator, Callable>,
+    Allocator>;
+  using allocated_ptr_t = typename pointer_holder_t::pointer;
 
-  function_backend(Callable callable) : callable(std::move(callable)) {}
+  function_backend(Callable callable, allocated_ptr_t ptr)
+    : boost::empty_value<Callable, 0>(
+      boost::empty_init_t(), std::move(callable))
+    , pointer_holder_t(std::move(ptr)) {}
 
   using function_backend_base<Signature, Traits>::call;
 
-  Callable callable;
+  virtual void delete_this(void* type_erased_alloc) {
+    using proto_traits = std::allocator_traits<Allocator>;
+    static_assert(std::is_void<typename proto_traits::value_type>::value);
+
+    auto& proto_alloc = *reinterpret_cast<Allocator*>(type_erased_alloc);
+
+    using alloc_traits =
+      typename proto_traits::template rebind_traits<function_backend>;
+    auto alloc = typename alloc_traits::allocator_type(proto_alloc);
+
+    auto const ptr = this->pointer_to(*this);
+
+    alloc_traits::destroy(alloc, this);
+    alloc_traits::deallocate(alloc, ptr, 1);
+  };
+
+
+  auto callable() noexcept -> Callable& {
+    return boost::empty_value<callable_t, 0>::get();
+  }
+
+  auto callable() const noexcept -> Callable const& {
+    return boost::empty_value<callable_t, 0>::get();
+  }
 };
 
-template <class Signature, class Traits, class Callable>
-auto make_backend(Callable callable)
-  -> std::unique_ptr<function_backend_base<Signature, Traits>> {
-  using Backend = function_backend<Signature, Traits, Callable>;
-  return std::make_unique<Backend>(std::move(callable));
+
+template <class Allocator>
+struct backend_deleter : boost::empty_value<Allocator> {
+  using allocator_type = Allocator;
+
+  backend_deleter(Allocator alloc)
+    : boost::empty_value<Allocator>(boost::empty_init_t(), std::move(alloc)) {}
+
+
+  auto get_allocator() const -> allocator_type const& {
+    return boost::empty_value<Allocator>::get();
+  }
+
+  template <class T>
+  void operator()(T* ptr) {
+    auto alloc = get_allocator();
+    ptr->delete_this(std::addressof(alloc));
+  }
+};
+
+
+template <class Signature, class Traits, class Callable, class Allocator>
+auto make_backend(Callable callable, Allocator proto_alloc) -> std::unique_ptr<
+  function_backend_base<Signature, Traits>,
+  backend_deleter<Allocator>> {
+  using backend_t = function_backend<Signature, Traits, Allocator, Callable>;
+  using deleter_t = backend_deleter<Allocator>;
+  using alloc_traits = typename std::allocator_traits<
+    Allocator>::template rebind_traits<backend_t>;
+
+  auto alloc = typename alloc_traits::allocator_type(proto_alloc);
+  auto fancy_ptr = alloc_traits::allocate(alloc, 1);
+  auto const raw_ptr = boost::to_address(fancy_ptr);
+  try {
+    alloc_traits::construct(
+      alloc, raw_ptr, std::move(callable), std::move(fancy_ptr));
+  } catch (...) { alloc_traits::deallocate(alloc, fancy_ptr, 1); }
+
+  return std::unique_ptr<backend_t, deleter_t>(
+    raw_ptr, deleter_t(proto_alloc));
 }
 
 
@@ -316,65 +462,87 @@ using are_rvalue_overloads_enabled = boost::mp11::mp_or<
   trait_for_overload<Traits, void() const&&>>;
 
 
-template <class Signature, class Traits>
+template <class Signature, class Traits, class Allocator>
 struct noncopyable_backend_holder {
-  using backend_type = detail::function_backend_base<Signature, Traits>;
+  using allocator_type = Allocator;
+  using backend_type = function_backend_base<Signature, Traits>;
+  using deleter_type = backend_deleter<Allocator>;
+  using backend_ptr = std::unique_ptr<backend_type, deleter_type>;
 
-  noncopyable_backend_holder() noexcept {}
+  noncopyable_backend_holder(Allocator alloc = Allocator())
+    : backend_(nullptr, deleter_type(alloc)) {}
 
   template <class Callable>
-  noncopyable_backend_holder(Callable callable)
-    : backend_(detail::make_backend<Signature, Traits>(std::move(callable))) {}
+  noncopyable_backend_holder(Callable callable, Allocator alloc = Allocator())
+    : backend_(make_backend<Signature, Traits>(std::move(callable), alloc)) {}
 
-  std::unique_ptr<backend_type> backend_;
+  auto get_allocator() const -> allocator_type const& {
+    return backend_.get_deleter().get_allocator();
+  }
+
+  backend_ptr backend_;
 };
 
 
-template <class Signature, class Traits>
+template <class Signature, class Traits, class Allocator>
 struct copyable_backend_holder
-  : noncopyable_backend_holder<Signature, Traits> {
-  using copyable_backend_holder::noncopyable_backend_holder::
-    noncopyable_backend_holder;
+  : noncopyable_backend_holder<Signature, Traits, Allocator> {
+  using base_t = noncopyable_backend_holder<Signature, Traits, Allocator>;
 
-  copyable_backend_holder(copyable_backend_holder&&) noexcept = default;
-  auto operator=(copyable_backend_holder&&) noexcept
+  using base_t::base_t;
+
+  copyable_backend_holder(copyable_backend_holder&&) = default;
+  auto operator=(copyable_backend_holder &&)
     -> copyable_backend_holder& = default;
 
-  copyable_backend_holder(copyable_backend_holder const& other) {
-    this->backend_ = other.backend_->clone();
+  copyable_backend_holder(copyable_backend_holder const& other)
+    : copyable_backend_holder(other.get_allocator()) {
+    auto alloc = this->get_allocator();
+    using backend_type = typename base_t::backend_type;
+    this->backend_.reset(static_cast<backend_type*>(
+      other.backend_->clone(std::addressof(alloc))));
   }
 
   auto operator=(copyable_backend_holder const& other)
     -> copyable_backend_holder& {
     auto temp = other;
-    return (*this) = std::move(temp);
+    return *this = std::move(temp);
   }
 };
 
 
-template <class Signature, class Traits>
+template <class Signature, class Traits, class Allocator>
 using copyability_support = boost::mp11::mp_eval_if_c<
   !is_copyability_enabled<Traits>::value,
-  noncopyable_backend_holder<Signature, Traits>,
+  noncopyable_backend_holder<Signature, Traits, Allocator>,
   copyable_backend_holder,
   Signature,
-  Traits>;
+  Traits,
+  Allocator>;
 
-template <class Signature, class Traits, class... Overloads>
+template <class Signature, class Traits, class Allocator, class... Overloads>
 class basic_function
   : public function_frontend_part<
-      basic_function<Signature, Traits, Overloads...>,
+      basic_function<Signature, Traits, Allocator, Overloads...>,
       are_rvalue_overloads_enabled<Traits>::value,
       Overloads>...
-  , copyability_support<Signature, Traits>
+  , copyability_support<Signature, Traits, Allocator>
 {
-public:
-  using copyability_support<Signature, Traits>::copyability_support;
+private:
+  using holder_t = copyability_support<Signature, Traits, Allocator>;
 
+public:
+  using allocator_type = typename holder_t::allocator_type;
+
+  using holder_t::holder_t;
   using function_frontend_part<
-    basic_function<Signature, Traits, Overloads...>,
+    basic_function<Signature, Traits, Allocator, Overloads...>,
     are_rvalue_overloads_enabled<Traits>::value,
     Overloads>::operator()...;
+
+  auto get_allocator() const -> allocator_type {
+    return holder_t::get_allocator();
+  }
 
 private:
   template <class, bool, class>
