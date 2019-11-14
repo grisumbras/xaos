@@ -1,7 +1,13 @@
+#ifndef XAOS_DETAIL_FUNCTION_HPP
+#define XAOS_DETAIL_FUNCTION_HPP
+
+
 #include <boost/mp11/algorithm.hpp>
 #include <boost/mp11/bind.hpp>
 #include <boost/mp11/utility.hpp>
+#include <boost/type_traits/copy_cv_ref.hpp>
 
+#include <functional>
 #include <memory>
 
 
@@ -113,7 +119,8 @@ struct function_backend_base_part<R(Args...) const&&>
 
 
 template <class Signature, class Traits, class... Overloads>
-struct function_backend_base_helper : function_backend_base_part<Overloads>... {
+struct function_backend_base_helper
+  : function_backend_base_part<Overloads>... {
   virtual ~function_backend_base_helper() = default;
   using function_backend_base_part<Overloads>::call...;
 };
@@ -125,40 +132,43 @@ using function_backend_base = boost::mp11::mp_apply_q<
   enabled_signature_overloads<Signature, Traits>>;
 
 
+template <class R, class T, class... Args>
+auto forward_to_callable(T&& t, Args... args) -> R {
+  using callable_t = typename std::remove_reference_t<T>::callable_t;
+  using callable_ref = boost::copy_cv_ref_t<callable_t, T&&>;
+  return std::invoke(static_cast<callable_ref>(t.callable), args...);
+}
+
+
 template <class Derived, class Base, class Signature>
 struct function_backend_part;
 
 template <class Derived, class Base, class R, class... Args>
 struct function_backend_part<Derived, Base, R(Args...)&> : Base {
   auto call(Args... args) & -> R override {
-    auto& self = static_cast<Derived&>(*this);
-    return self.callable(args...);
+    return forward_to_callable<R>(static_cast<Derived&>(*this), args...);
   }
 };
 
 template <class Derived, class Base, class R, class... Args>
 struct function_backend_part<Derived, Base, R(Args...) const&> : Base {
   auto call(Args... args) const& -> R override {
-    auto& self = static_cast<Derived const&>(*this);
-    return self.callable(args...);
+    return forward_to_callable<R>(static_cast<Derived const&>(*this), args...);
   }
 };
 
 template <class Derived, class Base, class R, class... Args>
 struct function_backend_part<Derived, Base, R(Args...) &&> : Base {
   auto call(Args... args) && -> R override {
-    auto& self = static_cast<Derived&>(*this);
-    using callable_t = typename Derived::callable_t;
-    return static_cast<callable_t&&>(self.callable)(args...);
+    return forward_to_callable<R>(static_cast<Derived&&>(*this), args...);
   }
 };
 
 template <class Derived, class Base, class R, class... Args>
 struct function_backend_part<Derived, Base, R(Args...) const&&> : Base {
   auto call(Args... args) const&& -> R override {
-    auto& self = static_cast<Derived const&>(*this);
-    using callable_t = typename Derived::callable_t;
-    return static_cast<callable_t const&&>(self.callable)(args...);
+    return forward_to_callable<R>(
+      static_cast<Derived const&&>(*this), args...);
   }
 };
 
@@ -243,7 +253,10 @@ struct function_frontend_part<Derived, HasRvalueOverloads, R(Args...) &&> {
 };
 
 template <class Derived, bool HasRvalueOverloads, class R, class... Args>
-struct function_frontend_part<Derived, HasRvalueOverloads, R(Args...) const&&> {
+struct function_frontend_part<
+  Derived,
+  HasRvalueOverloads,
+  R(Args...) const&&> {
   auto operator()(Args... args) const&& -> R {
     auto& self = static_cast<Derived const&>(*this);
     return forward_to_backend<typename Derived::backend_type const&&>(
@@ -292,3 +305,6 @@ basic_function<Signature, Traits, Overloads...>::basic_function(
 
 } // namespace detail
 } // namespace xaos
+
+
+#endif // XAOS_DETAIL_FUNCTION_HPP

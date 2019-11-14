@@ -14,9 +14,12 @@ struct function_traits {
   static constexpr bool lvalue_ref_call = true;
 };
 
-
 struct const_function_traits {
   static constexpr bool const_lvalue_ref_call = true;
+};
+
+struct rvalue_function_traits {
+  static constexpr bool rvalue_ref_call = true;
 };
 
 
@@ -31,6 +34,9 @@ using function = basic_function<Signature, function_traits>;
 
 template <class Signature>
 using const_function = basic_function<Signature, const_function_traits>;
+
+template <class Signature>
+using rfunction = basic_function<Signature, rvalue_function_traits>;
 
 
 } // namespace xaos

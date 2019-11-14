@@ -24,6 +24,15 @@ struct enable_all {
 };
 
 
+auto get_42() { return 42; }
+
+
+struct with_mem_fn {
+  int n = 0;
+  auto get_n() { return n; }
+};
+
+
 } // namespace
 
 
@@ -32,6 +41,26 @@ int main() {
   BOOST_TEST_EQ(xaos::function<int()>([] { return 13; })(), 13);
   BOOST_TEST_EQ(xaos::function<int(int)>([](auto n) { return n * n; })(5), 25);
   BOOST_TEST_EQ(xaos::function<double()>([] { return 0.5; })(), 0.5);
+
+  BOOST_TEST_EQ(xaos::function<int()>([] { return 1; })(), 1);
+  BOOST_TEST_EQ(xaos::const_function<int()>([] { return 2; })(), 2);
+  BOOST_TEST_EQ(xaos::rfunction<int()>([] { return 3; })(), 3);
+
+  BOOST_TEST_EQ(xaos::function<int()>(get_42)(), 42);
+  BOOST_TEST_EQ(xaos::const_function<int()>(get_42)(), 42);
+  BOOST_TEST_EQ(xaos::rfunction<int()>(get_42)(), 42);
+
+  BOOST_TEST_EQ(xaos::function<int()>(get_42)(), 42);
+  BOOST_TEST_EQ(xaos::const_function<int()>(get_42)(), 42);
+  BOOST_TEST_EQ(xaos::rfunction<int()>(get_42)(), 42);
+
+  BOOST_TEST_EQ(
+    xaos::function<int(with_mem_fn const&)>(&with_mem_fn::get_n)(
+      with_mem_fn{7}),
+    7);
+  BOOST_TEST_EQ(
+    xaos::function<int(with_mem_fn const&)>(&with_mem_fn::n)(with_mem_fn{4}),
+    4);
 
   {
     auto f = xaos::function<int()>([n = 5]() mutable { return n++; });
