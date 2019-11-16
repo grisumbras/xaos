@@ -1,5 +1,6 @@
 import path ;
 import print ;
+import regex ;
 import testing ;
 
 
@@ -11,15 +12,18 @@ project xaos-tests
   ;
 
 
-make include-function-hpp.cpp
-  : ../include/xaos/function.hpp
-  : @create-include-test
-  ;
-compile include-function-hpp.cpp /xaos//libs ;
-
 compile function-detail.cpp /xaos//libs ;
 run function.cpp /xaos//libs ;
 
+
+for header in [ glob-tree-ex ../include : *.hpp ] {
+  local name = [ path.make $(header:G=) ] ;
+  name = [ path.relative $(name) ../include ] ;
+  name = [ regex.replace $(name:D) / - ] ;
+  name = $(name)-$(header:BS=.cpp) ;
+  make $(name) : $(header) : @create-include-test ;
+  compile $(name) /xaos//libs ;
+}
 
 rule create-include-test ( target : header : properties * ) {
   local path = [ path.make $(header:G=) ] ;

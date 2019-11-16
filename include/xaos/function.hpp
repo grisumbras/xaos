@@ -35,7 +35,7 @@ using basic_function = boost::mp11::mp_apply_q<
     Signature,
     Traits,
     typename std::allocator_traits<Allocator>::template rebind_alloc<void>>,
-  detail::enabled_signature_overloads<Signature, Traits>>;
+  detail::enabled_overloads<Signature, Traits>>;
 
 
 template <class Signature, class Allocator = std::allocator<void>>
