@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <string>
+#include <type_traits>
 
 
 namespace {
@@ -76,6 +77,8 @@ class counting_allocator
 public:
   using value_type = T;
   using pointer = dumb_ptr<T>;
+  using propagate_on_container_copy_assignment = std::true_type;
+  using propagate_on_container_move_assignment = std::true_type;
 
   template <class U>
   counting_allocator(counting_allocator<U> other)
@@ -121,6 +124,40 @@ auto operator!=(counting_allocator<L> l, counting_allocator<R> r) -> bool {
 auto counting_memory_resource::get_allocator() -> counting_allocator<void> {
   return counting_allocator<void>(*this);
 }
+
+
+template <class T>
+class tracking_allocator
+{
+public:
+  using value_type = T;
+
+
+  tracking_allocator(int& soccc) : soccc(&soccc) {}
+
+  template <class U>
+  tracking_allocator(tracking_allocator<U> other) : soccc(other.soccc) {}
+
+
+  auto select_on_container_copy_construction() const -> tracking_allocator {
+    ++(*soccc);
+    return *this;
+  }
+
+  auto allocate(std::size_t n) -> T* {
+    return std::allocator<T>().allocate(n);
+  }
+
+  void deallocate(T* ptr, std::size_t n) {
+    std::allocator<T>().deallocate(ptr, n);
+  }
+
+private:
+  template <class>
+  friend class tracking_allocator;
+
+  int* soccc;
+};
 
 
 } // namespace
@@ -195,6 +232,98 @@ int main() {
       BOOST_TEST(alloc == f.get_allocator());
     }
     BOOST_TEST_EQ(mem_rs.currently_allocated, 0);
+  }
+
+  // test SOCCC support
+  {
+    int soccc = 0;
+    auto alloc = tracking_allocator<void>(soccc);
+    BOOST_TEST_EQ(soccc, 0);
+    auto const f = xaos::function<void(), decltype(alloc)>([] {}, alloc);
+
+    auto g = f;
+    BOOST_TEST_EQ(soccc, 1);
+
+    g = f;
+    BOOST_TEST_EQ(soccc, 1);
+  }
+
+  // test POCCA
+  {
+    auto mem_rs1 = counting_memory_resource();
+    auto mem_rs2 = counting_memory_resource();
+    auto alloc1 = mem_rs1.get_allocator();
+    auto alloc2 = mem_rs2.get_allocator();
+
+    using F = xaos::function<void(), decltype(alloc1)>;
+    auto const f = F([] {}, alloc1);
+    auto g = F([] {}, alloc2);
+    BOOST_TEST_NE(
+      &f.get_allocator().memory_resource(),
+      &g.get_allocator().memory_resource());
+    g = f;
+    BOOST_TEST_EQ(
+      &f.get_allocator().memory_resource(),
+      &g.get_allocator().memory_resource());
+  }
+
+  // test POCMA
+  {
+    auto mem_rs1 = counting_memory_resource();
+    auto mem_rs2 = counting_memory_resource();
+    auto alloc1 = mem_rs1.get_allocator();
+    auto alloc2 = mem_rs2.get_allocator();
+
+    using F = xaos::function<void(), decltype(alloc1)>;
+    auto f = F([] {}, alloc1);
+    auto g = F([] {}, alloc2);
+    BOOST_TEST_NE(
+      &f.get_allocator().memory_resource(),
+      &g.get_allocator().memory_resource());
+
+    auto const h = f;
+    BOOST_TEST_EQ(
+      &f.get_allocator().memory_resource(),
+      &h.get_allocator().memory_resource());
+
+    g = std::move(f);
+    BOOST_TEST_EQ(
+      &g.get_allocator().memory_resource(),
+      &h.get_allocator().memory_resource());
+  }
+
+  // test POCS
+  {
+    auto mem_rs1 = counting_memory_resource();
+    auto mem_rs2 = counting_memory_resource();
+    auto alloc1 = mem_rs1.get_allocator();
+    auto alloc2 = mem_rs2.get_allocator();
+
+    using F = xaos::function<void(), decltype(alloc1)>;
+    auto f = F([] {}, alloc1);
+    auto g = F([] {}, alloc2);
+    BOOST_TEST_NE(
+      &f.get_allocator().memory_resource(),
+      &g.get_allocator().memory_resource());
+
+    auto const f1 = f;
+    BOOST_TEST_EQ(
+      &f.get_allocator().memory_resource(),
+      &f1.get_allocator().memory_resource());
+
+    auto const g1 = g;
+    BOOST_TEST_EQ(
+      &g.get_allocator().memory_resource(),
+      &g1.get_allocator().memory_resource());
+
+    using std::swap;
+    swap(f, g);
+    BOOST_TEST_EQ(
+      &f.get_allocator().memory_resource(),
+      &g1.get_allocator().memory_resource());
+    BOOST_TEST_EQ(
+      &g.get_allocator().memory_resource(),
+      &f1.get_allocator().memory_resource());
   }
 
   return boost::report_errors();
