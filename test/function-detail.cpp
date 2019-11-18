@@ -55,19 +55,6 @@ static_assert(
 static_assert(
   !xaos::detail::is_copyability_enabled<xaos::rvalue_function_traits>::value);
 
-static_assert(std::is_base_of_v<
-              xaos::detail::noncopyable_backend_storage<
-                int(),
-                xaos::function_traits,
-                std::allocator<void>>,
-              xaos::function<int()>>);
-static_assert(std::is_base_of_v<
-              xaos::detail::copyable_backend_storage<
-                int(),
-                xaos::function_traits,
-                std::allocator<void>>,
-              xaos::function<int()>>);
-
 static_assert(std::is_copy_constructible_v<xaos::function<int()>>);
 static_assert(std::is_copy_assignable_v<xaos::function<int()>>);
 static_assert(std::is_copy_constructible_v<xaos::const_function<int()>>);
