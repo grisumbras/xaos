@@ -38,7 +38,7 @@ jobs:
   publish:
     needs: build
 
-    if: github.event.ref == 'refs/heads/master'
+    if: startsWith(github.event.ref, 'refs/tags/')
 
     runs-on: ubuntu-latest
 
