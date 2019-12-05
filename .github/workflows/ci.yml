@@ -1,4 +1,4 @@
-name: ci
+name: Build
 
 on: push
 
@@ -31,7 +31,7 @@ jobs:
           CONAN_PASSWORD: ${{ secrets.CONAN_PASSWORD }}
 
       - name: Run CPT
-        uses: grisumbras/run-cpt@latest
+        uses: grisumbras/run-cpt@v0.2.0
         env:
           CONAN_STABLE_BRANCH_PATTERN: '---'
 
@@ -52,6 +52,6 @@ jobs:
           python-version: 3.7
 
       - name: Promote to stable
-        uses: grisumbras/conan-promote@latest
+        uses: grisumbras/conan-promote@v0.3.0
         with:
           password: ${{ secrets.CONAN_PASSWORD }}
